@@ -16,6 +16,7 @@ import asyncio
 import html as _html
 import logging
 import os
+import uuid
 
 from aiogram import Bot, Dispatcher, F, Router
 from aiogram.client.default import DefaultBotProperties
@@ -42,7 +43,7 @@ router = Router()
 db = Database(config.DB_PATH)
 quiz = QuizClient()
 
-# user_id -> активная игра: {"questions": [...], "index": int, "score": int}
+# user_id -> активная игра: {"questions": [...], "index": int, "score": int, "nonce": str}
 _games: dict[int, dict] = {}
 
 
@@ -104,20 +105,30 @@ async def cmd_quiz(message: Message) -> None:
         logger.exception("Не удалось загрузить вопросы")
         await message.answer("⚠️ Не удалось загрузить вопросы. Попробуйте позже: /quiz")
         return
-    _games[user_id] = {"questions": questions, "index": 0, "score": 0}
-    await _send_question(message, user_id, str(user_id))
+    # nonce отличает эту игру от прошлых: кнопки старой игры не сработают
+    nonce = uuid.uuid4().hex[:8]
+    _games[user_id] = {"questions": questions, "index": 0, "score": 0, "nonce": nonce}
+    await _send_question(message, user_id, f"{user_id}:{nonce}")
 
 
 @router.callback_query(F.data.startswith("quiz:"))
 async def on_answer(callback: CallbackQuery) -> None:
-    _, game_id, answer_idx = callback.data.split(":")
-    user_id = callback.from_user.id
-    if game_id != str(user_id):  # кнопка от старой игры другого пользователя
-        await callback.answer("Эта кнопка уже неактуальна.", show_alert=False)
+    parts = callback.data.split(":")
+    # формат quiz:{user_id}:{nonce}:{idx}; мусорные данные игнорируем
+    if len(parts) != 4 or not parts[1].isdigit() or not parts[3].isdigit():
+        await callback.answer("Устаревшая кнопка.", show_alert=False)
         return
+    _, user_id_str, nonce, answer_idx = parts
+    user_id = callback.from_user.id
     game = _games.get(user_id)
-    if game is None:
-        await callback.answer("Игра не найдена — начните новую: /quiz", show_alert=True)
+    # чужие кнопки и кнопки от ПРОШЛОЙ игры того же игрока — недействительны
+    if user_id_str != str(user_id) or game is None or nonce != game.get("nonce"):
+        await callback.answer(
+            "Эта кнопка устарела — начните новую игру: /quiz", show_alert=True
+        )
+        return
+    if callback.message is None:
+        await callback.answer("Сообщение недоступно.", show_alert=True)
         return
     q = game["questions"][game["index"]]
     correct = int(answer_idx) == q.correct_index
@@ -138,7 +149,7 @@ async def on_answer(callback: CallbackQuery) -> None:
     if game["index"] >= len(game["questions"]):
         await _finish(callback.message, user_id)
     else:
-        await _send_question(callback.message, user_id, str(user_id))
+        await _send_question(callback.message, user_id, f"{user_id}:{nonce}")
 
 
 @router.message(Command("leaderboard"))
