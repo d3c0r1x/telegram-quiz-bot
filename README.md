@@ -1,0 +1,52 @@
+# Telegram Quiz Bot (Проект 5)
+
+Telegram-бот-викторина: загружает вопросы из бесплатного публичного API
+**OpenTDB** (Open Trivia Database), показывает их по одному с инлайн-кнопками,
+ведёт счёт и сохраняет рекорды в SQLite. Есть оффлайн-режим со встроенным
+пулом вопросов — бот работает без интернета.
+
+## Стек
+
+| Библиотека   | Зачем                                              |
+|--------------|----------------------------------------------------|
+| aiogram v3.x | Telegram Bot API (инлайн-кнопки, callback-запросы) |
+| httpx        | асинхронные запросы к OpenTDB API                  |
+| aiosqlite    | асинхронная SQLite (статистика, лидерборд)         |
+| pydantic     | модель вопроса с валидацией                        |
+| asyncio      | асинхронная модель                                 |
+
+## Команды
+
+- `/quiz` — начать викторину (10 вопросов, 4 варианта ответа, кнопки)
+- `/leaderboard` — топ-10 игроков по лучшему результату
+- `/stats` — моя статистика
+
+## Запуск
+
+```bash
+python -m venv .venv
+pip install -r requirements.txt
+export QUIZ_BOT_TOKEN=123456:ABC...   # Windows PowerShell: $env:QUIZ_BOT_TOKEN="..."
+export QUIZ_DEMO_MODE=1               # 0 — реальный OpenTDB API
+python bot.py
+```
+
+Либо двойной клик по `run_bot5.cmd` (читает токен `TG_TOKEN` из корневого `.env`).
+
+## Честное примечание об OpenTDB
+
+- Бесплатный публичный API без ключа (документация: https://opentdb.com/api_config.php).
+- Формат: `GET https://opentdb.com/api.php?amount=10&type=multiple` → `response_code`
+  (0 = успех, 1 = API перегружен) и массив `results` с `question`,
+  `correct_answer`, `incorrect_answers`.
+- Вопросы приходят с HTML-сущностями (`&quot;`) — парсер снимает их через
+  `html.unescape` из stdlib.
+- Вопросы на английском; при недоступности API (response_code=1 или сеть)
+  бот откатывается на встроенный русскоязычный пул.
+- **В демо-режиме (`QUIZ_DEMO_MODE=1`, по умолчанию) сеть не нужна вовсе.**
+
+## Тесты
+
+```bash
+pytest tests/ -q
+```
