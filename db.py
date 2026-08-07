@@ -1,4 +1,10 @@
-"""SQLite-БД результатов викторины (aiosqlite): статистика и лидерборд."""
+"""SQLite-БД результатов викторины (aiosqlite): статистика и лидерборд.
+
+Продвинутый уровень:
+  - таблица games — журнал каждой сыгранной игры (сложность, дата, счёт);
+  - full_stats() — точность (% правильных) и последние 5 игр;
+  - leaderboard остаётся по лучшему результату.
+"""
 from __future__ import annotations
 
 import aiosqlite
@@ -20,10 +26,30 @@ class Database:
                 )
                 """
             )
+            await db.execute(
+                """
+                CREATE TABLE IF NOT EXISTS games (
+                    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id    INTEGER,
+                    username   TEXT,
+                    score      INTEGER NOT NULL,
+                    total      INTEGER NOT NULL,
+                    difficulty TEXT,
+                    played_at  TEXT DEFAULT (datetime('now'))
+                )
+                """
+            )
             await db.commit()
 
-    async def save_result(self, user_id: int, username: str | None, score: int) -> None:
-        """После игры: +1 к числу игр, лучший результат — максимум."""
+    async def save_result(
+        self,
+        user_id: int,
+        username: str | None,
+        score: int,
+        total: int,
+        difficulty: str = "any",
+    ) -> None:
+        """После игры: обновляем сводку + пишем строку в журнал игр."""
         async with aiosqlite.connect(self.path) as db:
             await db.execute(
                 """
@@ -36,6 +62,11 @@ class Database:
                 """,
                 (user_id, username or "", score),
             )
+            await db.execute(
+                "INSERT INTO games (user_id, username, score, total, difficulty) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (user_id, username or "", score, total, difficulty),
+            )
             await db.commit()
 
     async def stats(self, user_id: int) -> tuple[int, int] | None:
@@ -47,6 +78,38 @@ class Database:
             ) as cur:
                 row = await cur.fetchone()
         return (row[0], row[1]) if row else None
+
+    async def full_stats(self, user_id: int) -> dict | None:
+        """Расширенная статистика: игры, лучший, точность, последние 5 игр."""
+        async with aiosqlite.connect(self.path) as db:
+            db.row_factory = aiosqlite.Row
+            async with db.execute(
+                "SELECT games_played, best_score FROM users WHERE user_id = ?",
+                (user_id,),
+            ) as cur:
+                row = await cur.fetchone()
+            if row is None:
+                return None
+            async with db.execute(
+                "SELECT score, total, difficulty, played_at FROM games "
+                "WHERE user_id = ? ORDER BY id DESC LIMIT 5",
+                (user_id,),
+            ) as cur:
+                recent = [dict(r) for r in await cur.fetchall()]
+            async with db.execute(
+                "SELECT SUM(score) AS s, SUM(total) AS t FROM games WHERE user_id = ?",
+                (user_id,),
+            ) as cur:
+                sums = await cur.fetchone()
+        total_correct = sums["s"] or 0
+        total_all = sums["t"] or 0
+        return {
+            "games_played": row["games_played"],
+            "best_score": row["best_score"],
+            "accuracy": round(total_correct / total_all * 100, 1) if total_all else 0.0,
+            "total_correct": total_correct,
+            "recent": recent,
+        }
 
     async def leaderboard(self, limit: int = 10) -> list[tuple[str, int]]:
         """Топ-N игроков по лучшему результату."""

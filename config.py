@@ -17,3 +17,12 @@ QUIZ_API_URL = os.getenv(
     "https://opentdb.com/api.php?amount={n}&type=multiple",
 )
 QUIZ_API_TIMEOUT = float(os.getenv("QUIZ_API_TIMEOUT", "10"))
+
+# --- Продвинутый уровень ---
+# Доступные сложности (для OpenTDB и встроенного пула)
+DIFFICULTIES = ("any", "easy", "medium", "hard")
+DEFAULT_DIFFICULTY = os.getenv("QUIZ_DIFFICULTY", "any")
+# Брошенные игры живут не дольше этого времени (секунды), потом вычищаются
+GAME_TTL_SECONDS = float(os.getenv("QUIZ_GAME_TTL_SECONDS", "1800"))
+# Минимальный интервал между сообщениями пользователя (секунды)
+THROTTLE_MIN_INTERVAL = float(os.getenv("THROTTLE_MIN_INTERVAL", "0.7"))

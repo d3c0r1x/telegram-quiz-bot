@@ -1,0 +1,9 @@
+[project]
+name = "telegram-quiz-bot"
+version = "2.0.0"
+description = "Викторина в Telegram: OpenTDB + инлайн-кнопки + лидерборд в SQLite"
+requires-python = ">=3.11"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"

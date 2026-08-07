@@ -3,11 +3,15 @@
 OpenTDB (Open Trivia Database, https://opentdb.com) — бесплатный публичный API
 без ключа. В демо-режиме (QUIZ_DEMO_MODE=1) используется встроенный пул —
 бот работает даже без интернета.
+
+Продвинутый уровень: фильтр по сложности (easy/medium/hard) — параметр
+&difficulty= в запросе к OpenTDB и маркировка вопросов оффлайн-пула.
 """
 from __future__ import annotations
 
 import html
 import random
+from urllib.parse import urlencode, urlparse, parse_qs, urlunparse
 
 import httpx
 from pydantic import BaseModel
@@ -67,10 +71,12 @@ class QuizClient:
         self.demo_mode = config.DEMO_MODE if demo_mode is None else demo_mode
         self._transport = transport
 
-    async def fetch_questions(self, amount: int) -> list[Question]:
+    async def fetch_questions(
+        self, amount: int, difficulty: str = "any"
+    ) -> list[Question]:
         if self.demo_mode:
-            return self._demo_questions(amount)
-        url = config.QUIZ_API_URL.format(n=amount)
+            return self._demo_questions(amount, difficulty)
+        url = self._build_url(amount, difficulty)
         async with httpx.AsyncClient(
             transport=self._transport, timeout=config.QUIZ_API_TIMEOUT
         ) as client:
@@ -79,8 +85,20 @@ class QuizClient:
             payload = resp.json()
         if payload.get("response_code") != 0 or not payload.get("results"):
             # response_code=1 означает «API перегружен» — откат на оффлайн-пул
-            return self._demo_questions(amount)
+            return self._demo_questions(amount, difficulty)
         return [self._parse(item) for item in payload["results"]]
+
+    @staticmethod
+    def _build_url(amount: int, difficulty: str) -> str:
+        """Добавляет &difficulty= к базовому URL из конфига (если не 'any')."""
+        url = config.QUIZ_API_URL.format(n=amount)
+        if difficulty in ("easy", "medium", "hard"):
+            parsed = urlparse(url)
+            query = parse_qs(parsed.query, keep_blank_values=True)
+            query["difficulty"] = [difficulty]
+            parsed = parsed._replace(query=urlencode(query, doseq=True))
+            url = urlunparse(parsed)
+        return url
 
     @staticmethod
     def _parse(item: dict) -> Question:
@@ -98,16 +116,17 @@ class QuizClient:
         )
 
     @staticmethod
-    def _demo_questions(amount: int) -> list[Question]:
+    def _demo_questions(amount: int, difficulty: str = "any") -> list[Question]:
         pool = list(DEMO_POOL)
         random.shuffle(pool)
+        mark = difficulty if difficulty in ("easy", "medium", "hard") else "easy"
         return [
             Question(
                 text=text,
                 options=options,
                 correct_index=options.index(correct),
                 category="Demo",
-                difficulty="easy",
+                difficulty=mark,
             )
             for text, options, correct in pool[:amount]
         ]
