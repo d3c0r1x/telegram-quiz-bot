@@ -105,6 +105,19 @@ def test_leaderboard_and_full_stats(tmp_path) -> None:
     asyncio.run(run())
 
 
+def test_parse_answer_callback() -> None:
+    from bot import parse_answer_callback
+
+    assert parse_answer_callback("quiz:123:abcd1234:0:2") == (123, "abcd1234", 0, 2)
+    assert parse_answer_callback("quiz:123:abcd1234:3:1") == (123, "abcd1234", 3, 1)
+    # старый формат без индекса вопроса — мусорные данные
+    assert parse_answer_callback("quiz:123:abcd1234:2") is None
+    assert parse_answer_callback("quiz:abc:abcd1234:0:2") is None   # id не число
+    assert parse_answer_callback("quiz:123:abcd1234:x:2") is None   # индекс не число
+    assert parse_answer_callback("quiz:123:abcd1234:0:y") is None   # ответ не число
+    assert parse_answer_callback("junk") is None
+
+
 def test_paginate_helper() -> None:
     items = list(range(12))
     page1, total, prev, nxt = paginate(items, 1, size=5)

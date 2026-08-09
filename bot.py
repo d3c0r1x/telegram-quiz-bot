@@ -100,10 +100,31 @@ def _difficulty_keyboard() -> InlineKeyboardMarkup:
     return kb.as_markup()
 
 
-def _game_keyboard(question: Question, game_id: str) -> InlineKeyboardMarkup:
+def parse_answer_callback(data: str) -> tuple[int, str, int, int] | None:
+    """Разбирает 'quiz:{user_id}:{nonce}:{question_index}:{answer}'.
+
+    Индекс вопроса в callback-данных защищает от повторного клика по
+    кнопке уже отвеченного вопроса (иначе ответ засчитывался бы
+    следующему вопросу). None — мусорные/старые данные.
+    """
+    parts = data.split(":")
+    if (
+        len(parts) != 5
+        or not parts[1].isdigit()
+        or not parts[3].isdigit()
+        or not parts[4].isdigit()
+    ):
+        return None
+    return int(parts[1]), parts[2], int(parts[3]), int(parts[4])
+
+
+def _game_keyboard(question: Question, game_id: str, qindex: int) -> InlineKeyboardMarkup:
     kb = InlineKeyboardBuilder()
     for idx, option in enumerate(question.options):
-        kb.button(text=f"{idx + 1}. {option[:60]}", callback_data=f"quiz:{game_id}:{idx}")
+        kb.button(
+            text=f"{idx + 1}. {option[:60]}",
+            callback_data=f"quiz:{game_id}:{qindex}:{idx}",
+        )
     kb.adjust(1)
     return kb.as_markup()
 
@@ -152,7 +173,7 @@ async def _send_question(message: Message, user_id: int, game_id: str) -> None:
     q = game["questions"][game["index"]]
     await message.answer(
         _question_text(q, game["index"] + 1, len(game["questions"])),
-        reply_markup=_game_keyboard(q, game_id),
+        reply_markup=_game_keyboard(q, game_id, game["index"]),
     )
 
 
@@ -203,16 +224,22 @@ async def on_difficulty(callback: CallbackQuery) -> None:
 
 @router.callback_query(F.data.startswith("quiz:"))
 async def on_answer(callback: CallbackQuery) -> None:
-    parts = callback.data.split(":")
-    # формат quiz:{user_id}:{nonce}:{idx}; мусорные данные игнорируем
-    if len(parts) != 4 or not parts[1].isdigit() or not parts[3].isdigit():
+    # формат quiz:{user_id}:{nonce}:{question_index}:{answer}
+    parsed = parse_answer_callback(callback.data or "")
+    if parsed is None:
         await callback.answer("Устаревшая кнопка.", show_alert=False)
         return
-    _, user_id_str, nonce, answer_idx = parts
+    cb_user_id, nonce, qindex, answer_idx = parsed
     user_id = callback.from_user.id
     game = _games.get(user_id)
-    # чужие кнопки и кнопки от ПРОШЛОЙ игры того же игрока — недействительны
-    if user_id_str != str(user_id) or game is None or nonce != game.get("nonce"):
+    # чужие кнопки, кнопки от ПРОШЛОЙ игры и повторный клик по уже
+    # отвеченному вопросу — недействительны
+    if (
+        cb_user_id != user_id
+        or game is None
+        or nonce != game.get("nonce")
+        or qindex != game["index"]
+    ):
         await callback.answer(
             "Эта кнопка устарела — начните новую игру: /quiz", show_alert=True
         )

@@ -205,7 +205,7 @@ def test_full_game_flow(tmp_path) -> None:
         for i in range(total):
             q = game["questions"][i]
             await dp.feed_update(
-                bot, _cb_update(f"quiz:{USER_ID}:{nonce}:{q.correct_index}",
+                bot, _cb_update(f"quiz:{USER_ID}:{nonce}:{i}:{q.correct_index}",
                                 mid := mid + 1, upd := upd + 1)
             )
 
@@ -259,7 +259,7 @@ def test_wrong_answer_shows_correct_option(tmp_path) -> None:
         q = game["questions"][0]
         wrong = (q.correct_index + 1) % len(q.options)
         await dp.feed_update(
-            bot, _cb_update(f"quiz:{USER_ID}:{game['nonce']}:{wrong}",
+            bot, _cb_update(f"quiz:{USER_ID}:{game['nonce']}:0:{wrong}",
                             mid := mid + 1, upd := upd + 1)
         )
 
@@ -301,7 +301,7 @@ def test_stale_button_from_previous_game_rejected(tmp_path) -> None:
         # жмём кнопку СТАРОЙ игры → отклоняется с предупреждением
         session.calls.clear()
         await dp.feed_update(
-            bot, _cb_update(f"quiz:{USER_ID}:{old_nonce}:0", mid := mid + 1, upd := upd + 1)
+            bot, _cb_update(f"quiz:{USER_ID}:{old_nonce}:0:0", mid := mid + 1, upd := upd + 1)
         )
         alerts = [
             c["data"] for c in session.calls
@@ -312,9 +312,50 @@ def test_stale_button_from_previous_game_rejected(tmp_path) -> None:
 
         # кнопка НОВОЙ игры работает
         await dp.feed_update(
-            bot, _cb_update(f"quiz:{USER_ID}:{new_nonce}:0", mid := mid + 1, upd := upd + 1)
+            bot, _cb_update(f"quiz:{USER_ID}:{new_nonce}:0:0", mid := mid + 1, upd := upd + 1)
         )
         assert len(_edit_texts(session)) == 1
+        await bot.session.close()
+
+    asyncio.run(run())
+
+
+def test_double_click_same_button_ignored(tmp_path) -> None:
+    """Повторный клик по кнопке уже отвеченного вопроса не засчитывается."""
+    db_path = str(tmp_path / "quiz.db")
+
+    async def run() -> None:
+        _reset_state(db_path)
+        await botmod.db.init()
+        session = CapturingSession()
+        bot = _make_bot(session)
+        dp = DP
+
+        upd = mid = 0
+        await dp.feed_update(bot, _msg_update("/quiz", mid := mid + 1, upd := upd + 1))
+        await dp.feed_update(bot, _cb_update("diff:any", mid := mid + 1, upd := upd + 1))
+
+        game = botmod._games[USER_ID]
+        q = game["questions"][0]
+        cb = f"quiz:{USER_ID}:{game['nonce']}:0:{q.correct_index}"
+
+        # первый клик — ответ засчитан, индекс игры сдвинулся
+        await dp.feed_update(bot, _cb_update(cb, mid := mid + 1, upd := upd + 1))
+        assert botmod._games[USER_ID]["index"] == 1
+        assert botmod._games[USER_ID]["score"] == 1
+        edits = _edit_texts(session)
+        assert edits and "✅ Верно!" in edits[-1]
+
+        # тот же callback повторно — отклоняется, состояние не меняется
+        session.calls.clear()
+        await dp.feed_update(bot, _cb_update(cb, mid := mid + 1, upd := upd + 1))
+        alerts = [
+            c["data"] for c in session.calls
+            if c["method"] == "AnswerCallbackQuery" and c["data"].get("show_alert")
+        ]
+        assert alerts and "устарела" in alerts[0]["text"]
+        assert botmod._games[USER_ID]["index"] == 1   # вопрос не перескочил
+        assert botmod._games[USER_ID]["score"] == 1   # очко не задвоилось
         await bot.session.close()
 
     asyncio.run(run())
