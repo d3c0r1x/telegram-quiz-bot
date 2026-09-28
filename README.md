@@ -1,5 +1,7 @@
 # Telegram Quiz Bot
 
+[![CI](https://github.com/d3c0r1x/telegram-quiz-bot/actions/workflows/ci.yml/badge.svg)](https://github.com/d3c0r1x/telegram-quiz-bot/actions/workflows/ci.yml)
+
 Викторина в Telegram: 10 вопросов, 4 варианта ответа, кнопки, счёт, лидерборд. Вопросы загружаются из бесплатного публичного API **OpenTDB**; при его недоступности используется встроенный оффлайн-пул.
 
 ## Команды
