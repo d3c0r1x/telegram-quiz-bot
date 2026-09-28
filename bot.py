@@ -180,15 +180,20 @@ async def _send_question(message: Message, user_id: int, game_id: str) -> None:
 async def _finish(message: Message, user_id: int) -> None:
     game = _games.pop(user_id)
     total = len(game["questions"])
+    prev_best = (await db.stats(user_id))
     await db.save_result(
         user_id, message.from_user.username, game["score"], total, game["difficulty"]
     )
     ratio = game["score"] / total if total else 0
     emoji = "🏆" if ratio >= 0.8 else "👍" if ratio >= 0.5 else "💪"
+    record_line = ""
+    if prev_best and game["score"] > prev_best[1]:
+        record_line = f"\n🎉 <b>Новый личный рекорд!</b> Прошлый: {prev_best[1]}"
     await message.answer(
         f"{emoji} <b>Игра окончена!</b>\n"
         f"Ваш результат: <b>{game['score']} / {total}</b> "
-        f"(сложность: {_html.escape(game['difficulty'])})\n\n"
+        f"(сложность: {_html.escape(game['difficulty'])})"
+        f"{record_line}\n\n"
         "/leaderboard — посмотреть топ игроков"
     )
 
