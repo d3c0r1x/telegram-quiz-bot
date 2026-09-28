@@ -14,7 +14,7 @@
   - брошенные игры вычищаются (GAME_TTL_SECONDS);
   - лидерборд с пагинацией, статистика с точностью в %.
 
-Запуск:  python bot.py   (задайте QUIZ_BOT_TOKEN, или используйте run_bot5.cmd).
+Запуск:  python bot.py   (задайте QUIZ_BOT_TOKEN, или используйте start.bat).
 """
 from __future__ import annotations
 
